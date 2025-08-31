@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Euro Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+body { font-family: Arial, sans-serif; margin: 20px; }
+h1 { text-align: center; }
+table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+th { background-color: #f2f2f2; }
+canvas { max-width: 100%; margin-bottom: 50px; }
+</style>
+</head>
+<body>
+
+<h1>Euro Dashboard</h1>
+
+<table id="priceTable">
+  <thead>
+    <tr>
+      <th>Pair</th>
+      <th>Current</th>
+      <th>7d Ago</th>
+      <th>7d %</th>
+      <th>30d Ago</th>
+      <th>30d %</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>EUR/USD</td><td id="eurusd">-</td><td id="eurusd7">-</td><td id="eurusd7p">-</td><td id="eurusd30">-</td><td id="eurusd30p">-</td></tr>
+    <tr><td>EUR/GBP</td><td id="eurgbp">-</td><td id="eurgbp7">-</td><td id="eurgbp7p">-</td><td id="eurgbp30">-</td><td id="eurgbp30p">-</td></tr>
+    <tr><td>EUR/JPY</td><td id="eurjpy">-</td><td id="eurjpy7">-</td><td id="eurjpy7p">-</td><td id="eurjpy30">-</td><td id="eurjpy30p">-</td></tr>
+    <tr><td>BTC/EUR</td><td id="btceur">-</td><td id="btceur7">-</td><td id="btceur7p">-</td><td id="btceur30">-</td><td id="btceur30p">-</td></tr>
+    <tr><td>ETH/EUR</td><td id="etheur">-</td><td id="etheur7">-</td><td id="etheur7p">-</td><td id="etheur30">-</td><td id="etheur30p">-</td></tr>
+  </tbody>
+</table>
+
+<canvas id="chartCrypto" height="100"></canvas>
+<canvas id="chartFiat" height="100"></canvas>
+
+<script>
+function pctChange(current, oldVal) {
+  return ((current - oldVal)/oldVal*100).toFixed(2);
+}
+
+// Helper for CORS proxy
+async function fetchProxy(url) {
+  const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(url);
+  const resp = await fetch(proxyUrl);
+  const data = await resp.json();
+  return JSON.parse(data.contents);
+}
+
+// Fetch fiat rates using exchangerate.host
+async function fetchFiatHistory(pair) {
+  const base = pair.split("/")[0];
+  const target = pair.split("/")[1];
+  const today = new Date();
+  const todayStr = today.toISOString().split("T")[0];
+  const date7 = new Date();
+  date7.setDate(today.getDate() - 7);
+  const date7Str = date7.toISOString().split("T")[0];
+  const date30 = new Date();
+  date30.setDate(today.getDate() - 30);
+  const date30Str = date30.toISOString().split("T")[0];
+
+  const current = await fetchProxy(`https://api.exchangerate.host/${todayStr}?base=${base}&symbols=${target}`);
+  const val7 = await fetchProxy(`https://api.exchangerate.host/${date7Str}?base=${base}&symbols=${target}`);
+  const val30 = await fetchProxy(`https://api.exchangerate.host/${date30Str}?base=${base}&symbols=${target}`);
+
+  return [current.rates[target], val7.rates[target], val30.rates[target]];
+}
+
+// Fetch crypto prices & history using CoinGecko
+async function fetchCryptoHistory(coin) {
+  const now = Math.floor(Date.now()/1000);
+  const from7 = now - 7*24*60*60;
+  const from30 = now - 30*24*60*60;
+
+  const curData = await fetchProxy(`https://api.coingecko.com/api/v3/simple/price?ids=${coin}&vs_currencies=eur`);
+  const current = curData[coin].eur;
+
+  const hist7 = await fetchProxy(`https://api.coingecko.com/api/v3/coins/${coin}/market_chart/range?vs_currency=eur&from=${from7}&to=${now}`);
+  const price7 = hist7.prices[0][1];
+
+  const hist30 = await fetchProxy(`https://api.coingecko.com/api/v3/coins/${coin}/market_chart/range?vs_currency=eur&from=${from30}&to=${now}`);
+  const price30 = hist30.prices[0][1];
+
+  return [current, price7, price30, hist7.prices, hist30.prices];
+}
+
+async function updateDashboard() {
+  // Fiat
+  const [eurusdC, eurusd7, eurusd30] = await fetchFiatHistory("EUR/USD");
+  document.getElementById("eurusd").innerText = eurusdC.toFixed(4);
+  document.getElementById("eurusd7").innerText = eurusd7.toFixed(4);
+  document.getElementById("eurusd7p").innerText = pctChange(eurusdC, eurusd7)+"%";
+  document.getElementById("eurusd30").innerText = eurusd30.toFixed(4);
+  document.getElementById("eurusd30p").innerText = pctChange(eurusdC, eurusd30);
+
+  const [eurgbpC, eurgbp7, eurgbp30] = await fetchFiatHistory("EUR/GBP");
+  document.getElementById("eurgbp").innerText = eurgbpC.toFixed(4);
+  document.getElementById("eurgbp7").innerText = eurgbp7.toFixed(4);
+  document.getElementById("eurgbp7p").innerText = pctChange(eurgbpC, eurgbp7)+"%";
+  document.getElementById("eurgbp30").innerText = eurgbp30.toFixed(4);
+  document.getElementById("eurgbp30p").innerText = pctChange(eurgbpC, eurgbp30);
+
+  const [eurjpyC, eurjpy7, eurjpy30] = await fetchFiatHistory("EUR/JPY");
+  document.getElementById("eurjpy").innerText = eurjpyC.toFixed(2);
+  document.getElementById("eurjpy7").innerText = eurjpy7.toFixed(2);
+  document.getElementById("eurjpy7p").innerText = pctChange(eurjpyC, eurjpy7)+"%";
+  document.getElementById("eurjpy30").innerText = eurjpy30.toFixed(2);
+  document.getElementById("eurjpy30p").innerText = pctChange(eurjpyC, eurjpy30);
+
+  // Crypto
+  const [btcC, btc7, btc30, btc7Data, btc30Data] = await fetchCryptoHistory("bitcoin");
+  document.getElementById("btceur").innerText = btcC.toFixed(0);
+  document.getElementById("btceur7").innerText = btc7.toFixed(0);
+  document.getElementById("btceur7p").innerText = pctChange(btcC, btc7)+"%";
+  document.getElementById("btceur30").innerText = btc30.toFixed(0);
+  document.getElementById("btceur30p").innerText = pctChange(btcC, btc30)+"%";
+
+  const [ethC, eth7, eth30, eth7Data, eth30Data] = await fetchCryptoHistory("ethereum");
+  document.getElementById("etheur").innerText = ethC.toFixed(0);
+  document.getElementById("etheur7").innerText = eth7.toFixed(0);
+  document.getElementById("etheur7p").innerText = pctChange(ethC, eth7)+"%";
+  document.getElementById("etheur30").innerText = eth30.toFixed(0);
+  document.getElementById("etheur30p").innerText = pctChange(ethC, eth30)+"%";
+
+  // Charts
+  const ctxCrypto = document.getElementById('chartCrypto').getContext('2d');
+  new Chart(ctxCrypto, {
+    type: 'line',
+    data: {
+      labels: btc30Data.map(p => new Date(p[0]).toLocaleDateString()),
+      datasets: [
+        { label: 'BTC/EUR', data: btc30Data.map(p => p[1]), borderColor:'orange', fill:false },
+        { label: 'ETH/EUR', data: eth30Data.map(p => p[1]), borderColor:'purple', fill:false }
+      ]
+    },
+    options: { responsive:true, plugins:{legend:{position:'top'}}}
+  });
+
+  const ctxFiat = document.getElementById('chartFiat').getContext('2d');
+  new Chart(ctxFiat, {
+    type: 'line',
+    data: {
+      labels: btc30Data.map(p => new Date(p[0]).toLocaleDateString()),
+      datasets: [
+        { label: 'EUR/USD', data: Array(btc30Data.length).fill(eurusdC), borderColor:'blue', fill:false },
+        { label: 'EUR/GBP', data: Array(btc30Data.length).fill(eurgbpC), borderColor:'green', fill:false },
+        { label: 'EUR/JPY', data: Array(btc30Data.length).fill(eurjpyC), borderColor:'red', fill:false }
+      ]
+    },
+    options: { responsive:true, plugins:{legend:{position:'top'}}}
+  });
+}
+
+// Initial load
+updateDashboard();
+// Refresh every 5 minutes
+setInterval(updateDashboard, 5*60*1000);
+</script>
+
+</body>
+</html>
